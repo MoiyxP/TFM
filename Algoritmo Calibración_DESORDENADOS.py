@@ -32,6 +32,9 @@ SEGMENTS_MAP = {
 # Segmentación de la señal
 # ------------------------------------------------------------------
 
+def get_cols(df, pattern):
+    return [c for c in df.columns if pattern in c][:3] 
+
 def segment_data(df, sensor_name, idx_turn = None):
     """
     Bases de la segmentación:
@@ -136,9 +139,6 @@ idx_turn_global = np.where(np.abs(yaw_p - np.mean(yaw_p[20:120])) > 1.2)[0]
 idx_turn_global = idx_turn_global[0] if len(idx_turn_global) >0 else None
 
 ### ------------- Funciones algebráicas
-
-def get_cols(df, pattern):
-    return [c for c in df.columns if pattern in c][:3]
 
 def get_vertical_local(q_static):
     """

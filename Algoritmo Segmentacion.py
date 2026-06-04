@@ -32,6 +32,9 @@ SEGMENTS_MAP = {
 # Segmentación de la señal
 # ------------------------------------------------------------------
 
+def get_cols(df, pattern):
+    return [c for c in df.columns if pattern in c][:3] 
+
 def segment_data(df, sensor_name, idx_turn = None):
     """
     Bases de la segmentación:

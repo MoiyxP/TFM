@@ -32,6 +32,9 @@ SEGMENTS_MAP = {
 # Segmentación de la señal
 # ------------------------------------------------------------------
 
+def get_cols(df, pattern):
+    return [c for c in df.columns if pattern in c][:3] 
+
 def segment_data(df, sensor_name, idx_turn = None):
     """
     Bases de la segmentación:
@@ -137,8 +140,7 @@ idx_turn_global = idx_turn_global[0] if len(idx_turn_global) >0 else None
 
 ### ------------- Funciones extra
 
-def get_cols(df, pattern):
-    return [c for c in df.columns if pattern in c][:3] 
+
 
 def get_ml_functional_acc(df, t_mov, v_vert_local):
     # Definimos una ventana corta al inicio (100 frames) para evitar la vuelta
