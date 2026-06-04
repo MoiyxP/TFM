@@ -1,0 +1,44 @@
+Comandos git:
+git init -> Crea un repositorio Git en la carpeta actual
+git clone <url> -> Descarga un repositorio de GitHub en tu ordenador
+
+git status -> Muestra el estado de los archivos (modificados, nuevos, etc.)
+git log -> Muestra el historial completo de commits
+git log --oneline -> Muestra el historial resumido en una línea por commit
+git diff -> Muestra los cambios no guardados en commit
+git diff --staged -> Muestra los cambios ya añadidos con git add
+
+git add . -> Añade todos los cambios al área de preparación (staging)
+git add <archivo> -> Añade un archivo concreto al staging
+git restore <archivo> -> Deshace cambios en un archivo (antes del commit)
+git reset -> Quita archivos del staging sin borrar cambios
+
+git commit -m "mensaje" -> Guarda una versión del proyecto con un mensaje
+git commit --amend -> Modifica el último commit
+git reset --soft HEAD~1 -> Deshace el último commit pero mantiene los cambios
+
+git remote add origin <url> -> Conecta el proyecto local con GitHub
+git remote -v -> Muestra los repositorios remotos conectados
+
+git push -> Sube los commits al repositorio remoto
+git push -u origin main -> Sube por primera vez y define la rama principal
+
+git pull -> Descarga y fusiona cambios desde GitHub
+
+git branch -> Muestra todas las ramas
+git branch <nombre> -> Crea una nueva rama
+git switch <rama> -> Cambia de rama
+git switch -c <rama> -> Crea y cambia a una nueva rama
+git checkout <rama> -> Cambia de rama (versión antigua)
+git merge <rama> -> Fusiona una rama con la actual
+git branch -d <rama> -> Borra una rama local
+git push -u origin <rama> -> Sube una nueva rama a GitHub
+
+git restore . -> Deshace todos los cambios locales no guardados
+git reset --hard HEAD -> Vuelve al último commit (borra cambios)
+git clean -fd -> Elimina archivos no trackeados
+
+git stash -> Guarda cambios temporalmente sin commit
+git stash pop -> Recupera los cambios guardados
+
+git tag -> Muestra o crea etiquetas de versiones
