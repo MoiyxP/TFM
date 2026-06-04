@@ -268,7 +268,7 @@ pd.DataFrame(calib_log).to_excel(final_excel, index=False)
 
 def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
     min_len = min([len(df) for df in dict_dfs.values()])
-    q_cols = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_q0']
+    q_cols = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_qgi0']
     
     data_rows = []
     is_static = "calibracion" in output_path or "static" in output_path
