@@ -319,7 +319,7 @@ def generate_xml_placer(xml_path, sto_calibration_name):
     
     # Rotación necesaria para pasar de Z-Up (IMU) a Y-Up (OpenSim)
     # -1.5707963267948966 rad = -90 grados en el eje X
-    ET.SubElement(placer, "sensor_to_opensim_rotations").text = "-1.5707963267948966 0 0"
+    ET.SubElement(placer, "sensor_to_opensim_rotations").text = "0 0 0"
     
     # Nombre del archivo de calibración que acabamos de generar
     ET.SubElement(placer, "orientation_file_for_calibration").text = sto_calibration_name
