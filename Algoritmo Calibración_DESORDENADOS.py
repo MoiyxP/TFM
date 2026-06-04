@@ -142,29 +142,11 @@ idx_turn_global = idx_turn_global[0] if len(idx_turn_global) >0 else None
 
 def get_vertical_local(q_static):
     """
-    Encuentra el eje local del sensor que mejor apunta al techo (Z global en ENU).
-    Es infalible incluso si el sensor está de lado, boca abajo o inclinado.
+    Extrae la dirección exacta del 'Techo' (Z global [0,0,1]) 
+    desde la perspectiva local del sensor.
     """
-    # Ejes candidatos locales
-    candidates = [
-        np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])
-    ]
-    
-    best_axis = None
-    max_dot = -np.inf
-    
-    for c in candidates:
-        # Llevamos el eje local al mundo global para ver cuánto se alinea con 'Arriba'
-        v_global = q_static.apply(c)
-        dot = v_global[2] # Componente Z global (el 'arriba' de XSens)
-        
-        # Nos quedamos con el eje que tenga mayor valor absoluto (el más vertical)
-        if abs(dot) > max_dot:
-            max_dot = abs(dot)
-            # Si el valor era negativo, el eje apunta hacia abajo, así que lo invertimos
-            best_axis = c if dot > 0 else -c
-            
-    return best_axis / np.linalg.norm(best_axis)
+    v_vert = q_static.inv().apply([0, 0, 1])
+    return v_vert / np.linalg.norm(v_vert)
 
 def get_global_forward_from_yaw(df, t_mov):
     """
@@ -186,25 +168,25 @@ def get_ml_axis_from_static(q_static, yaw_global):
     v_ml_local /= np.linalg.norm(v_ml_local)
     return v_ml_local
 
-
 def get_orthonormal_basis(v_up, v_ml_local, v_fwd_ref_global, q_static):
     """
-    Construye la base y luego verifica que X apunte al frente.
-    Si no, invierte Z (ML) y recalcula. Así el signo de ML queda
-    determinado por el resultado en X, no por una suposición anatómica.
+    Construye la base y garantiza que el eje X apunte al frente de la marcha.
     """
+    # 1. Eje Y (UP)
     y_axis = v_up / np.linalg.norm(v_up)
 
+    # 2. Eje Z (RIGHT) - Ortogonalizamos respecto a Y
     z_axis = v_ml_local - np.dot(v_ml_local, y_axis) * y_axis
     z_axis /= np.linalg.norm(z_axis)
 
+    # 3. Eje X (FORWARD) -> X = Y x Z
     x_axis = np.cross(y_axis, z_axis)
     x_axis /= np.linalg.norm(x_axis)
 
-    # Comprobamos que X apunta al frente en coordenadas globales
+    # --- SEGURO DE RUMBO ---
+    # Si el X resultante apunta hacia atrás del avance de la pelvis, invertimos Z
     x_global = q_static.apply(x_axis)
     if np.dot(x_global, v_fwd_ref_global) < 0:
-        # X apunta atrás: invertimos Z y recalculamos X
         z_axis = -z_axis
         x_axis = np.cross(y_axis, z_axis)
         x_axis /= np.linalg.norm(x_axis)
@@ -223,15 +205,19 @@ df_p = dict_dfs['pelvis_imu']
 r_est_p, r_mov_p = segment_data(df_p, 'pelvis_imu', idx_turn_global)
 segment_ranges['pelvis_imu'] = (r_est_p, r_mov_p)
 
+# AQUÍ SE DEFINE q_static_p
 q_static_p = R.from_quat(df_p.iloc[r_est_p[0]:r_est_p[1]][q_cols_xsens].dropna().values).mean()
 
-# CAMBIO AQUÍ: Usamos la nueva función robusta
-v_vert_p = get_vertical_local(q_static_p) 
+# Ahora usamos la función simplificada
+v_vert_p = get_vertical_local(q_static_p)
 
+# Obtenemos el rumbo global maestro (Brújula)
 v_fwd_global, yaw_maestro = get_global_forward_from_yaw(df_p, r_mov_p)
 
-# Calibramos Pelvis (pasando el avance para validar su X)
+# ML Pelvis
 v_ml_p = get_ml_axis_from_static(q_static_p, yaw_maestro)
+
+# Construcción de base S2S para la pelvis
 s2s_matrices['pelvis_imu'] = get_orthonormal_basis(v_vert_p, v_ml_p, v_fwd_global, q_static_p)
 
 # --- PASO 2: EL RESTO DE SENSORES ---
@@ -267,15 +253,14 @@ pd.DataFrame(calib_log).to_excel(final_excel, index=False)
 ### ------------- Archivos .STO
 
 def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
-    min_len = min([len(df) for df in dict_dfs.values()])
     q_cols = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_q0']
-    
-    data_rows = []
     is_static = "calibracion" in output_path or "static" in output_path
+    min_len = min([len(df) for df in dict_dfs.values()])
     frames_to_process = 1 if is_static else min_len
+    data_rows = []
 
     for i in range(frames_to_process):
-        row = [i/100.0]
+        row = [i / 100.0]
         for seg, df in dict_dfs.items():
             if is_static:
                 t = segment_ranges[seg][0]
@@ -283,19 +268,19 @@ def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
             else:
                 q_raw = R.from_quat(df.iloc[i][q_cols].values)
 
-            # TRANSFORMACIÓN PURA: Dato * S2S
-            # S2S ya contiene el Rumbo (Yaw) y la Verticalidad
-            q_final_rot = q_raw * s2s_matrices[seg]
-            q_f = q_final_rot.as_quat()
+            # TRANSFORMACIÓN PURA: Solo el sensor por su matriz de calibración
+            # No rotamos nada más aquí.
+            q_final = q_raw * s2s_matrices[seg]
+            q_f = q_final.as_quat()
 
             if q_f[3] < 0: q_f = -q_f
             row.append(f"{q_f[3]},{q_f[0]},{q_f[1]},{q_f[2]}")
-
         data_rows.append(row)
 
+    # (Escritura del archivo... igual que siempre)
     with open(output_path, 'w') as f:
         f.write("DataRate=100.000000\nDataType=Quaternion\nversion=3\nOpenSimVersion=4.5\n")
-        f.write(f"nRows={len(data_rows)}\nnColumns={len(dict_dfs)+1}\n")
+        f.write(f"nRows={len(data_rows)}\nnColumns={len(dict_dfs) + 1}\n")
         f.write("endheader\n")
         pd.DataFrame(data_rows, columns=['time'] + list(dict_dfs.keys())).to_csv(f, sep='\t', index=False)
 
@@ -303,7 +288,23 @@ def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
 export_sto(dict_dfs, sto_movement, segment_ranges, s2s_matrices)
 export_sto(dict_dfs, sto_calibration, segment_ranges, s2s_matrices)
 
+# Rotación ENU→OpenSim
+R_enu_to_osim = R.from_euler('x', -np.pi/2)
 
+# Orientación estática de pelvis en OpenSim
+r_est_p = segment_ranges['pelvis_imu'][0]
+q_pelvis = R.from_quat(
+    dict_dfs['pelvis_imu'].iloc[r_est_p[0]:r_est_p[1]][q_cols_xsens].dropna().values
+).mean()
+s2s_pelvis = s2s_matrices['pelvis_imu']
+
+q_anat_osim = R_enu_to_osim * q_pelvis * s2s_pelvis
+mtx = q_anat_osim.as_matrix()
+
+print("Ejes de pelvis en espacio OpenSim:")
+print(f"  X (debe ser frente del modelo): {mtx[:,0].round(2)}")
+print(f"  Y (debe ser arriba):            {mtx[:,1].round(2)}")
+print(f"  Z (debe ser lateral):           {mtx[:,2].round(2)}")
 
 ### ------------- Archivo XML
 
@@ -319,7 +320,7 @@ def generate_xml_placer(xml_path, sto_calibration_name):
     
     # Rotación necesaria para pasar de Z-Up (IMU) a Y-Up (OpenSim)
     # -1.5707963267948966 rad = -90 grados en el eje X
-    ET.SubElement(placer, "sensor_to_opensim_rotations").text = "0 0 0"
+    ET.SubElement(placer, "sensor_to_opensim_rotations").text = "-1.5707963267948966 0 0"
     
     # Nombre del archivo de calibración que acabamos de generar
     ET.SubElement(placer, "orientation_file_for_calibration").text = sto_calibration_name
@@ -369,6 +370,38 @@ for seg, rot in s2s_matrices.items():
     status = "OK" if error_avance > 0.9 else "!!! SENTIDO INVERTIDO"
     print(f"{seg:15}: Frente Global = {fwd_world.round(2)}  [{status}]")
 
+R_enu_to_osim = R.from_euler('x', -np.pi / 2)
+
+r_est_p = segment_ranges['pelvis_imu'][0]
+q_pelvis = R.from_quat(
+    dict_dfs['pelvis_imu'].iloc[r_est_p[0]:r_est_p[1]][q_cols_xsens].dropna().values
+).mean()
+s2s_pelvis = s2s_matrices['pelvis_imu']
+
+# Orientación del sensor de pelvis en OpenSim (sin corrección de heading todavía)
+q_sensor_osim = R_enu_to_osim * q_pelvis * s2s_pelvis
+mtx = q_sensor_osim.as_matrix()
+
+ejes = {
+    'x':  mtx[:, 0],
+    '-x': -mtx[:, 0],
+    'y':  mtx[:, 1],
+    '-y': -mtx[:, 1],
+    'z':  mtx[:, 2],
+    '-z': -mtx[:, 2],
+}
+
+# El frente en OpenSim es +X = [1, 0, 0]
+frente_osim = np.array([1.0, 0.0, 0.0])
+
+print("¿Qué eje del sensor apunta más al frente del modelo en OpenSim?")
+for nombre, vec in ejes.items():
+    # Proyectamos en el plano horizontal de OpenSim (ignoramos Y)
+    vec_horiz = np.array([vec[0], 0.0, vec[2]])
+    if np.linalg.norm(vec_horiz) > 0:
+        vec_horiz /= np.linalg.norm(vec_horiz)
+    dot = np.dot(vec_horiz, frente_osim)
+    print(f"  {nombre:>3}:  componente X = {vec[0]:+.3f}   dot con frente = {dot:+.3f}")
+
 print("\n" + "="*50)
-print("SI AMBOS TESTS DAN 'OK', EL MODELO CAMINARÁ PERFECTO")
 print("="*50)
