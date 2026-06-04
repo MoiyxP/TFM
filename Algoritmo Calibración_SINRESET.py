@@ -10,7 +10,7 @@ from xml.dom import minidom
 
 #### Rutas carpetas y datos
 
-data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDA_SENSORES_ALINEADOS_SINRESET"
+data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDAVUELTA_SENSORES_ALINEADOS_SINRESET"
 results_rout = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Resultados"
 
 final_excel = os.path.join(results_rout, "Excel_Datos.xlsx")
@@ -246,7 +246,7 @@ def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
 
     # --- PASO B: GENERACIÓN DE DATOS ---
     data_rows = []
-    is_static = "calibracion" in output_path
+    is_static = "calibration" in output_path
 
     for i in range(1 if is_static else min_len):
         row = [i/100.0]

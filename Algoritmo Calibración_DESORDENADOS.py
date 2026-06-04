@@ -10,7 +10,7 @@ from xml.dom import minidom
 
 #### Rutas carpetas y datos
 
-data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDA_SENSORES_DESORDENADOS"
+data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDA_SENSORES_ALINEADOS_SINRESET"
 results_rout = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Resultados"
 
 final_excel = os.path.join(results_rout, "Excel_Datos.xlsx")
