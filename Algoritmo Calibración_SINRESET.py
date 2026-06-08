@@ -10,7 +10,7 @@ from xml.dom import minidom
 
 #### Rutas carpetas y datos
 
-data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDA_SENSORES_ALINEADOS_SINRESET"
+data_adress = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Archivos\DATOS_VICTOR\MARCHA_IDA_SENSORES_DESORDENADOS"
 results_rout = r"C:\Users\Víctor\Documents\Estudios\Prácticas Biomech\Proyecto_Xsens\Resultados"
 
 final_excel = os.path.join(results_rout, "Excel_Datos.xlsx")
@@ -112,6 +112,67 @@ def segment_data(df, sensor_name, idx_turn = None):
     return static_range, motion_range
 
 # ------------------------------------------------------------------
+# Gráficas validación
+# ------------------------------------------------------------------
+
+def plot_gyro_scatter_pca(gyr_data, data_transformed, seg_name, pca, graphs_folder):
+    """
+    Visualización de la nube de puntos. 
+    Si pca es None, asume que data_transformed ya viene en el espacio del segmento (X, Y, Z).
+    """
+    # Configuración de etiquetas según el método
+    if pca is not None:
+        var = pca.explained_variance_ratio_ * 100
+        titulo = (f'Validación PCA: {seg_name}\n'
+                  f'PC1={var[0]:.1f}%  PC2={var[1]:.1f}%  PC3={var[2]:.1f}%')
+        label_x, label_y, label_z = 'PC1 (Flex/Ext)', 'PC2', 'PC3'
+    else:
+        titulo = f'Validación Funcional (Aceleración): {seg_name}'
+        label_x, label_y, label_z = 'X (Fwd)', 'Y (Up)', 'Z (ML)'
+
+    fig = plt.figure(figsize=(18, 10))
+    fig.suptitle(titulo, fontsize=14)
+    mag = np.linalg.norm(gyr_data, axis=1)
+
+    # --- Fila 1: Vistas 3D ---
+    ax1 = fig.add_subplot(2, 3, 1, projection='3d')
+    ax1.scatter(gyr_data[:,0], gyr_data[:,1], gyr_data[:,2], c=mag, cmap='viridis', alpha=0.5, s=8)
+    ax1.set_title('ANTES (Sensor)')
+    
+    ax2 = fig.add_subplot(2, 3, 2, projection='3d')
+    ax2.scatter(data_transformed[:,0], data_transformed[:,1], data_transformed[:,2], c=mag, cmap='viridis', alpha=0.5, s=8)
+    ax2.set_title('DESPUÉS (Segmento)')
+    ax2.set_xlabel(label_x); ax2.set_ylabel(label_y); ax2.set_zlabel(label_z)
+
+    # --- Fila 2: Proyecciones 2D ---
+    # Plano Sagital (X-Y o PC1-PC2)
+    ax3 = fig.add_subplot(2, 3, 4)
+    ax3.scatter(data_transformed[:,0], data_transformed[:,1], c=mag, cmap='viridis', alpha=0.6, s=8)
+    ax3.set_xlabel(label_x); ax3.set_ylabel(label_y)
+    ax3.set_title('Plano Sagital/Frontal')
+
+    # Plano Horizontal (X-Z o PC1-PC3)
+    ax4 = fig.add_subplot(2, 3, 5)
+    ax4.scatter(data_transformed[:,0], data_transformed[:,2], c=mag, cmap='viridis', alpha=0.6, s=8)
+    ax4.set_xlabel(label_x); ax4.set_ylabel(label_z)
+    ax4.set_title('Plano Horizontal')
+
+    # Plano Frontal (Y-Z o PC2-PC3)
+    ax5 = fig.add_subplot(2, 3, 6)
+    ax5.scatter(data_transformed[:,1], data_transformed[:,2], c=mag, cmap='viridis', alpha=0.6, s=8)
+    ax5.set_xlabel(label_y); ax5.set_ylabel(label_z)
+    ax5.set_title('Plano Frontal')
+
+    for ax in [ax1, ax2, ax3, ax4, ax5]:
+        if hasattr(ax, 'set_zlim'): ax.set_zlim([-6,6])
+        ax.set_xlim([-6,6]); ax.set_ylim([-6,6])
+        if isinstance(ax, plt.Axes): ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(graphs_folder, f'Validacion_{seg_name}.png'), dpi=150)
+    plt.close()
+
+# ------------------------------------------------------------------
 # Lógica Matemática
 # ------------------------------------------------------------------
 
@@ -140,6 +201,42 @@ idx_turn_global = idx_turn_global[0] if len(idx_turn_global) >0 else None
 
 ### ------------- Funciones algebráicas
 
+def calibrate_segment_functional(df, r_est, r_mov, seg, q_cols):
+    # === PASO 1: EJE VERTICAL (Y) ===
+    q_static = df.iloc[r_est[0]:r_est[1]][q_cols].dropna().values
+    rot_avg  = R.from_quat(q_static).mean()
+    v_vert   = rot_avg.inv().apply([0, 0, 1])
+    v_vert  /= np.linalg.norm(v_vert)
+
+    # === PASO 2: EJE DE FLEXIÓN (PCA -> Z) ===
+    gyr_cols = get_cols(df, 'Gyr')
+    gyr_data = df.iloc[r_mov[0]:r_mov[1]][gyr_cols].dropna().values
+    pca = PCA(n_components=3).fit(gyr_data)
+    v_flex = pca.components_[0]
+    
+    # Ortogonalizar Z respecto a Y
+    v_flex = v_flex - np.dot(v_flex, v_vert) * v_vert
+    v_flex /= np.linalg.norm(v_flex)
+
+    # === PASO 3: EJE FORWARD (X) ===
+    v_fwd = np.cross(v_vert, v_flex) # Y x Z = X
+    v_fwd /= np.linalg.norm(v_fwd)
+
+    # --- CORRECCIÓN DE SIGNO ---
+    acc_cols = get_cols(df, 'FreeAcc_') or get_cols(df, 'Acc_')
+    acc_mean = np.mean(df.iloc[r_mov[0]:r_mov[0]+100][acc_cols].values, axis=0)
+    
+    # Si X apunta atrás, invertimos X y Z (Y se queda igual)
+    if np.dot(v_fwd, acc_mean) < 0:
+        v_fwd = -v_fwd
+        v_flex = -v_flex
+
+    mat = np.column_stack((v_fwd, v_vert, v_flex))
+    det = np.linalg.det(mat)
+    assert abs(det - 1.0) < 1e-4, f"{seg}: Error de determinante {det}"
+
+    return R.from_matrix(mat), pca, gyr_data, v_vert, v_fwd, v_flex
+
 def get_ml_functional_acc(df, t_mov, v_vert_local):
     # Definimos una ventana corta al inicio (100 frames) para evitar la vuelta
     t_inicio_marcha = t_mov[0]
@@ -157,58 +254,69 @@ def get_ml_functional_acc(df, t_mov, v_vert_local):
     v_ml = np.cross(v_vert_local, v_fwd)
     return v_ml / np.linalg.norm(v_ml)
 
-def get_orthonormal_basis(v_vert, v_ml):
-    """
-    Construye la base: 
-    - Z = Vertical
-    - Y = ML
-    - X = Forward
-    """
-    z_axis = v_vert / np.linalg.norm(v_vert)
-    y_axis = v_ml - np.dot(v_ml, z_axis) * z_axis
-    y_axis /= np.linalg.norm(y_axis)
-    x_axis = np.cross(y_axis, z_axis)
-    x_axis /= np.linalg.norm(x_axis)
-
-    return R.from_matrix(np.column_stack((x_axis, y_axis, z_axis)))
-
-### ------------- BUCLE DE CALIBRACIÓN
+### ------------- BUCLE DE CALIBRACIÓN HÍBRIDO
 
 segment_ranges = {}
-s2s_matrices = {} # Almacenaje de la rotación sensor-segmento
+s2s_matrices = {} 
 calib_log = []
-q_cols_xsens = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_q0',]
+q_cols_xsens = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_q0']
 
 for seg, df in dict_dfs.items():
+    # 1. Segmentar periodos
     r_est, r_mov = segment_data(df, seg, idx_turn_global)
     segment_ranges[seg] = (r_est, r_mov)
 
-    # Calibración Vertical (Buscamos la gravedad durante la N-Pose)
-    q_static = df.iloc[r_est[0]:r_est[1]][q_cols_xsens].dropna().values # Usamos los cuaterniones
-    rot_avg_static = R.from_quat(q_static).mean() # Buscamos la orientación media que mejor representa a todas las muestras.
-    # Si usásemos np.mean, tendríamos un problema por los signos negativos
-    v_vert = rot_avg_static.inv().apply([0, 0, 1]) #Determinamos la dirección de la gravedad desde la perspectiva del sensor
-    # Este será nuestro vector vertical de referencia. 
-
-    # Calibración Horizontal (Eje ML -> PCA usando el giroscopio)
     if seg == 'pelvis_imu':
-        v_ml = get_ml_functional_acc(df, r_mov, v_vert)
-    else:    
+        print(f"[{seg}] Calibración funcional por aceleración...")
+        q_static = df.iloc[r_est[0]:r_est[1]][q_cols_xsens].dropna().values
+        rot_avg = R.from_quat(q_static).mean()
+        v_v = rot_avg.inv().apply([0, 0, 1])
+        v_v /= np.linalg.norm(v_v)
+        
+        v_m = get_ml_functional_acc(df, r_mov, v_v) # Z (ML)
+        v_f = np.cross(v_v, v_m)                   # X (Fwd)
+        v_f /= np.linalg.norm(v_f)
+        
+        mat = np.column_stack((v_f, v_v, v_m))
+        det = np.linalg.det(mat)
+        if det < 0:
+            v_m = -v_m
+            mat = np.column_stack((v_f, v_v, v_m))
+        
+        s2s = R.from_matrix(mat)
+        pca_obj = None
+        var_pc1_display = "Funcional"
+        desv_deg = 90.0
         gyr_data = df.iloc[r_mov[0]:r_mov[1]][get_cols(df, 'Gyr')].dropna().values
-        v_ml = PCA(n_components = 1).fit(gyr_data).components_[0]
+        data_plot = s2s.inv().apply(gyr_data)
 
-    # Construimos la base S2S -> Matriz que alinea el sensor con el hueso
-    s2s_matrices[seg] = get_orthonormal_basis(v_vert, v_ml)
+    else:
+        # === MIEMBROS: PCA funcional ===
+        s2s, pca_obj, gyr_data, v_v, v_f, v_m = calibrate_segment_functional(df, r_est, r_mov, seg, q_cols_xsens)
+        data_plot = pca_obj.transform(gyr_data)
+        
+        # Variables para log
+        var_pc1_display = f"{pca_obj.explained_variance_ratio_[0]*100:.1f}%"
+        dot_prod = np.dot(v_v, v_f)
+        desv_deg = np.degrees(np.arccos(np.clip(dot_prod, -1.0, 1.0)))
 
-    # Datos para el excel
-    dot_product = np.clip(np.dot(v_vert, v_ml), -1.0, 1.0)
-    desv_deg = abs(90 - np.degrees(np.arccos(dot_product)))
+    # 3. Guardar resultados
+    s2s_matrices[seg] = s2s
+    
+    # 4. IMPRIMIR LOG (Formato recuperado)
+    print(f"[{seg}] PC1 (Z-ML) Var: {var_pc1_display} | Angulo V-Z: 90.00°")
 
+    # 5. Gráfica de validación
+    plot_gyro_scatter_pca(gyr_data, data_plot, seg, pca_obj, graphs_folder)
+
+    # 6. Guardar en el Excel
     calib_log.append({
         'Segmento': seg,
-        'Desviación_Ortogonalidad_Deg': desv_deg,
-        'V_Vert_X': v_vert[0], 'V_Vert_Y': v_vert[1], 'V_Vert_Z': v_vert[2],
-        'V_ML_X': v_ml[0], 'V_ML_Y': v_ml[1], 'V_ML_Z': v_ml[2]
+        'Metodo': 'PCA' if pca_obj else 'Aceleracion',
+        'PC1_Variance_%': var_pc1_display,
+        'Angulo_V_X_Deg': desv_deg,
+        'V_Vert_X': v_v[0], 'V_Vert_Y': v_v[1], 'V_Vert_Z': v_v[2],
+        'V_Flex_X': v_f[0], 'V_Flex_Y': v_f[1], 'V_Flex_Z': v_f[2]
     })
 
 pd.DataFrame(calib_log).to_excel(final_excel, index = False)
@@ -222,57 +330,54 @@ pd.DataFrame(calib_log).to_excel(final_excel, index = False)
 def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
     min_len = min([len(df) for df in dict_dfs.values()])
     q_cols = ['Quat_q1', 'Quat_q2', 'Quat_q3', 'Quat_q0']
-    
-    # --- PASO A: ALINEACIÓN DE HEADING POR SEGMENTO ---
-    # Al usar arctan2, el código detecta automáticamente si el sensor
-    # mira hacia adelante o hacia atrás y lo corrige a 0º (X+).
+    is_static = "calibration" in output_path.lower()
+
+    # HEADING INDEPENDIENTE POR SEGMENTO
     dict_corrections = {}
     for seg, df in dict_dfs.items():
         t_st = segment_ranges[seg][0]
-        q_raw_st = R.from_quat(df.iloc[t_st[0]:t_st[1]][q_cols].dropna().values).mean()
-        
-        # Orientación anatómica inicial en el mundo
+        q_raw_st = R.from_quat(
+            df.iloc[t_st[0]:t_st[1]][q_cols].dropna().values
+        ).mean()
         q_anat_world = q_raw_st * s2s_matrices[seg]
-        
-        # Dirección del eje X (adelante) de este hueso
         fwd_vec = q_anat_world.apply([1, 0, 0])
-        
-        # Ángulo de desviación respecto al eje X del laboratorio
+        fwd_vec[2] = 0
+        fwd_vec /= np.linalg.norm(fwd_vec)
         yaw_angle = np.arctan2(fwd_vec[1], fwd_vec[0])
-        
-        # Aplicamos la corrección de Yaw. 
-        # Como tu pelvis ya está calibrada con el avance, esto es infalible.
         dict_corrections[seg] = R.from_euler('z', -yaw_angle)
+        print(f"  {seg}: Fwd={np.round(fwd_vec,3)} Yaw={np.degrees(yaw_angle):.1f}°")
 
-    # --- PASO B: GENERACIÓN DE DATOS ---
     data_rows = []
-    is_static = "calibracion" in output_path
+    frames = 1 if is_static else min_len
 
-    for i in range(1 if is_static else min_len):
-        row = [i/100.0]
+    for i in range(frames):
+        row = [i / 100.0]
         for seg, df in dict_dfs.items():
             if is_static:
                 t = segment_ranges[seg][0]
-                q_raw = R.from_quat(df.iloc[t[0]:t[1]][q_cols].dropna().values).mean()
+                q_raw = R.from_quat(
+                    df.iloc[t[0]:t[1]][q_cols].dropna().values
+                ).mean()
             else:
                 q_raw = R.from_quat(df.iloc[i][q_cols].values)
 
-            # Transformación: Corrección_Yaw * (Movimiento * Calibración_Anatómica)
             r_f = dict_corrections[seg] * (q_raw * s2s_matrices[seg])
             q_f = r_f.as_quat()
-
-            # Estabilidad de signos (W positiva)
-            if q_f[3] < 0: q_f = -q_f
-
-            # Formato OpenSim [w, x, y, z]
+            if q_f[3] < 0:
+                q_f = -q_f
             row.append(f"{q_f[3]},{q_f[0]},{q_f[1]},{q_f[2]}")
-
         data_rows.append(row)
 
-    # Escritura del archivo
     with open(output_path, 'w') as f:
-        f.write("DataRate=100.000000\nDataType=Quaternion\nversion=3\nOpenSimVersion=4.5\nendheader\n")
-        pd.DataFrame(data_rows, columns = ['time'] + list(dict_dfs.keys())).to_csv(f, sep = '\t', index = False)
+        f.write("DataRate=100.000000\nDataType=Quaternion\nversion=3\n"
+                "OpenSimVersion=4.5\nendheader\n")
+        pd.DataFrame(
+            data_rows,
+            columns=['time'] + list(dict_dfs.keys())
+        ).to_csv(f, sep='\t', index=False)
+
+    nombre = "ESTÁTICO" if is_static else "MOVIMIENTO"
+    print(f"Archivo exportado: {os.path.basename(output_path)} ({nombre})")
 
 export_sto(dict_dfs, sto_movement, segment_ranges, s2s_matrices)
 export_sto(dict_dfs, sto_calibration, segment_ranges, s2s_matrices)
