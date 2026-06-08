@@ -350,6 +350,44 @@ def export_sto(dict_dfs, output_path, segment_ranges, s2s_matrices):
     data_rows = []
     frames = 1 if is_static else min_len
 
+    # En export_sto, después de calcular todos los Fwd individuales,
+    # añade esta corrección de signo referenciada a la pelvis
+
+    # Fwd de referencia: pelvis
+    fwd_pelvis = None
+    for seg in dict_dfs.keys():
+        if seg == 'pelvis_imu':
+            t_st = segment_ranges[seg][0]
+            q_raw_st = R.from_quat(
+                dict_dfs[seg].iloc[t_st[0]:t_st[1]][q_cols].dropna().values
+            ).mean()
+            q_anat = q_raw_st * s2s_matrices[seg]
+            fwd_pelvis = q_anat.apply([1, 0, 0])
+            fwd_pelvis[2] = 0
+            fwd_pelvis /= np.linalg.norm(fwd_pelvis)
+            break
+
+        # Para cada segmento, verificar que su Fwd apunta en el mismo
+        # hemisferio que el Fwd de la pelvis
+        dict_corrections = {}
+        for seg, df in dict_dfs.items():
+            t_st = segment_ranges[seg][0]
+            q_raw_st = R.from_quat(
+                df.iloc[t_st[0]:t_st[1]][q_cols].dropna().values
+            ).mean()
+            q_anat_world = q_raw_st * s2s_matrices[seg]
+            fwd_vec = q_anat_world.apply([1, 0, 0])
+            fwd_vec[2] = 0
+            fwd_vec /= np.linalg.norm(fwd_vec)
+
+            # Si el Fwd apunta en dirección opuesta a la pelvis, invertir
+            if np.dot(fwd_vec, fwd_pelvis) < 0:
+                fwd_vec = -fwd_vec
+
+            yaw_angle = np.arctan2(fwd_vec[1], fwd_vec[0])
+            dict_corrections[seg] = R.from_euler('z', -yaw_angle)
+            print(f"  {seg}: Fwd={np.round(fwd_vec,3)} Yaw={np.degrees(yaw_angle):.1f}°")
+
     for i in range(frames):
         row = [i / 100.0]
         for seg, df in dict_dfs.items():
