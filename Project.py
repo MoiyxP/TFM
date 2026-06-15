@@ -22,12 +22,18 @@ def read_c3d(ruta):
 
     """
     markers = Markers.from_c3d(ruta)
+    df_markers = markers.meca.to_wide_dataframe()
+    df_markers.to_csv("markers_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
  
     try:
         analogs = Analogs.from_c3d(ruta)
     except Exception:
         print("No analogs in this file")
         analogs = None
+
+    if analogs:
+        df_analogs = analogs.meca.to_wide_dataframe()
+        df_analogs.to_csv("manalogs_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
  
     return markers, analogs
  
@@ -39,10 +45,8 @@ def evaluate_marker_gaps(markers, marker_name, thresholds=(10, 50)):
  
     small_threshold, medium_threshold = thresholds
  
-    # ------ Máscara de NaNs (sin norma)
-
-    # markers tiene dims (axis, channel, time) -> al seleccionar un canal
-    # queda (axis, time), por eso se reduce sobre axis=0 (los ejes x,y,z[,w])
+    # ------ Máscara de NaNs
+    
     data = markers.sel(channel=marker_name).values
     mask = np.isnan(data).any(axis=0)  # True donde el frame tiene algún NaN
  
@@ -148,6 +152,7 @@ def import_excel_data(ruta):
 # Evaluación de la señal c3d
 markers, analogs = read_c3d(movement_c3d)
 report = gap_report(markers)    
+
 with open("results.json", "w") as f:
     json.dump(report, f, indent=4)           
 
