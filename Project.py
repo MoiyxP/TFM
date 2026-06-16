@@ -2,6 +2,7 @@ import pandas as pd
 import pyomeca
 import os
 import numpy as np
+import xarray
 import json
 import matplotlib as plt
 import ezc3d as ez
@@ -129,6 +130,41 @@ def gap_report(markers, thresholds=(10, 50)):
         for name in marker_names
     }
 
+def interpolate_c3d(markers, analogs, method):
+    """
+    Vamos a interpolar los datos de los marcadores
+    independientemente de la longitud de sus huecos
+
+    """
+    # Hacemos la interpolación de los datos de los marcadores 
+    int_markers = markers.interpolate_na(dim="time", method=method)
+
+    # Rellenamos los posibles huecos al final de la señal
+    int_markers = int_markers.ffill(dim="time")
+
+    # Rellenamos los posibles huecos al principio de la señal
+    int_markers = int_markers.bfill(dim="time")
+
+    # Pasamos primero a un df para poder pasarlos a un excel ordenado
+    df_markers = int_markers.meca.to_wide_dataframe()
+    df_markers.to_csv("int_markers_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
+
+    if analogs is not None and analogs.size > 0:
+        try:
+            int_analogs = analogs.interpolate_na(dim="time", method=method)
+            int_analogs = int_analogs.ffill(dim="time").bfill(dim="time")
+
+            # Exportar analógicos solo si existen
+            df_analogs = int_analogs.meca.to_wide_dataframe()
+            df_analogs.to_csv("int_analogs_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
+        except Exception as e:
+            print(f"Error al procesar analógicos: {e}")
+    else:
+        print("No se detectaron datos analógicos en este archivo.")
+        int_analogs = 'None'
+
+    return int_markers, int_analogs
+
 def import_excel_data(ruta):
     """
     Lectura de los excel de datos
@@ -152,9 +188,11 @@ def import_excel_data(ruta):
 # Evaluación de la señal c3d
 markers, analogs = read_c3d(movement_c3d)
 report = gap_report(markers)    
-
-with open("results.json", "w") as f:
+with open("results.json", "w") as f: # Lo visualizamos en un json
     json.dump(report, f, indent=4)           
+
+# Vamos a interpolar todos los gaps, independientemente de su tamaño
+int_markers = interpolate_c3d(markers, analogs, 'akima')
 
 # Importación de los datos de csv
 metadata, quats, euler, euavg = import_excel_data(ruta_excel)
