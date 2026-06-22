@@ -1,0 +1,247 @@
+{
+    "L_HEAD": {
+        "marker": "L_HEAD",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_HEAD": {
+        "marker": "R_HEAD",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "SGL": {
+        "marker": "SGL",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "SME": {
+        "marker": "SME",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "TV2": {
+        "marker": "TV2",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "TV12": {
+        "marker": "TV12",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_SAE": {
+        "marker": "L_SAE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_HLE": {
+        "marker": "L_HLE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_UOA": {
+        "marker": "L_UOA",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_HME": {
+        "marker": "L_HME",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_RSP": {
+        "marker": "L_RSP",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_USP": {
+        "marker": "L_USP",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_HM2": {
+        "marker": "L_HM2",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_SAE": {
+        "marker": "R_SAE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_HLE": {
+        "marker": "R_HLE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_UOA": {
+        "marker": "R_UOA",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_HME": {
+        "marker": "R_HME",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_RSP": {
+        "marker": "R_RSP",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_USP": {
+        "marker": "R_USP",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_HM2": {
+        "marker": "R_HM2",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_IAS": {
+        "marker": "L_IAS",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "SACR": {
+        "marker": "SACR",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_IAS": {
+        "marker": "R_IAS",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_PAS": {
+        "marker": "L_PAS",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_FLE": {
+        "marker": "L_FLE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_TTC": {
+        "marker": "L_TTC",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_FAL": {
+        "marker": "L_FAL",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_FCC": {
+        "marker": "L_FCC",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "L_FM2": {
+        "marker": "L_FM2",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_PAS": {
+        "marker": "R_PAS",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_FLE": {
+        "marker": "R_FLE",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_TTC": {
+        "marker": "R_TTC",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_FAL": {
+        "marker": "R_FAL",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_FCC": {
+        "marker": "R_FCC",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    },
+    "R_FM2": {
+        "marker": "R_FM2",
+        "loss_fraction": 0.0,
+        "n_gaps": 0,
+        "gap_lengths": [],
+        "gap_details": []
+    }
+}
