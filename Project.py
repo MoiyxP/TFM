@@ -61,6 +61,7 @@ def import_excel_data(ruta):
  
     return dict_hojas
 
+
 def gap_report(markers, thresholds=(10, 50)):
     """
     Genera un informe de gaps para todos los marcadores de un trial.
@@ -152,12 +153,57 @@ def gap_report(markers, thresholds=(10, 50)):
         name: evaluate_marker_gaps(markers, name, thresholds=thresholds)
         for name in marker_names
     }
-
+ 
+ 
 def interpolate_c3d(markers, analogs, method):
     """
     Vamos a interpolar los datos de los marcadores
-    independientemente de la longitud de sus huecos
+    independientemente de la longitud de sus huecos.
+ 
+    Antes de interpolar, convierte a NaN cualquier gap disfrazado de
+    (0,0,0) (ver _marcar_ceros_como_nan) para que también se rellene
+    aquí, igual que un gap real detectado como NaN.
     """
+    def _marcar_ceros_como_nan(markers, tolerancia=1e-9):
+        """
+        Algunos c3d (visto en Sub01_Walk001.c3d, marcador LIAS en los frames
+        282 y 353) exportan un gap real como posición (0, 0, 0) en vez de
+        NaN. gap_report() solo detecta np.isnan(), así que estos gaps
+        "disfrazados" pasan con loss_fraction=0.0 sin que se note, y como
+        interpolate_na() tampoco ve ningún NaN, el (0,0,0) se cuela intacto
+        hasta construir_matriz_rotacion - ahí produce un salto de orientación
+        de ~150° en ese frame puntual (visto primero como picos en
+        Euler_Z/X/Y de Cadera_R, Cadera_L y Rodilla_L, todas las que usan PV).
+    
+        Una posición real en (0,0,0) exacto es prácticamente imposible en
+        captura óptica (el origen del laboratorio casi nunca coincide con un
+        punto anatómico real en un frame concreto), así que se trata como
+        gap: se reemplaza por NaN en las 3 coordenadas espaciales de ESE
+        marcador en ESE frame (sin tocar la fila homogénea ni el resto de
+        marcadores/frames), para que el resto de la función lo interpole
+        igual que cualquier otro gap real.
+        """
+        data = markers.values.copy()  # (4, n_markers, n_frames): x, y, z, fila homogénea
+        pos = data[:3, :, :]
+        es_cero = np.all(np.abs(pos) < tolerancia, axis=0)  # (n_markers, n_frames)
+    
+        if es_cero.any():
+            nombres = markers.channel.values
+            time = markers.time.values
+            for idx_marker, idx_frame in zip(*np.where(es_cero)):
+                print(
+                    f"Aviso: gap disfrazado de (0,0,0) detectado en marcador "
+                    f"'{nombres[idx_marker]}', frame {idx_frame} (t={time[idx_frame]:.4f}s) "
+                    f"- se trata como gap real antes de interpolar."
+                )
+            for fila in range(3):
+                data[fila, :, :][es_cero] = np.nan
+    
+        markers_limpio = markers.copy()
+        markers_limpio.values[...] = data
+        return markers_limpio
+
+    markers = _marcar_ceros_como_nan(markers)
     int_markers = markers.interpolate_na(dim="time", method=method)
     int_markers = int_markers.ffill(dim="time")
     int_markers = int_markers.bfill(dim="time")
@@ -398,6 +444,147 @@ def calcular_orientaciones_calibradas(
         resultados[seg_name] = df
     return resultados
 
+# -------------- Funciones de ángulos articulares
+#
+# Un "ángulo articular" es la orientación RELATIVA entre dos segmentos
+# contiguos (ej. rodilla = pierna respecto a muslo), a diferencia de las
+# orientaciones de más arriba, que son ABSOLUTAS (cada segmento respecto
+# al laboratorio).
+#
+# Se intentó usar pyomeca para esto (Rototrans.from_markers +
+# Angles.from_rototrans), pero:
+#   - Rototrans.from_markers sigue con el mismo bug que el resto del
+#     pipeline (mezcla xarray.DataArray con indexado posicional numpy al
+#     construir la matriz, y revienta con
+#     "new dimensions ('row','time') must be a superset of existing
+#     dimensions ('axis','time')" - independiente de la versión de numpy
+#     o xarray instalada, lo probé con varias).
+#   - La composición de dos Rototrans con el operador @ tampoco sirve:
+#     xarray intenta alinear por NOMBRE de dimensión en vez de hacer un
+#     matmul por frame, y el resultado colapsa a un escalar sin sentido
+#     (shape () en vez de (3,3,n_frames)).
+#   - Angles.from_rototrans SÍ funciona bien una vez se le pasa un
+#     Rototrans construido en numpy puro, y da resultados IDÉNTICOS
+#     (diff ~1e-14) a matriz_a_euler_zxy. Pero como ya tenemos esa
+#     función, no aporta nada usarla aparte.
+# Por eso esto sigue el mismo patrón numpy puro + scipy que el resto del
+# script, igual que construir_matriz_rotacion/calcular_orientaciones_*.
+ 
+PARES_ARTICULARES: Dict[str, Tuple[str, str]] = {
+    "Cadera_R": ("PV", "TH_R"),
+    "Cadera_L": ("PV", "TH_L"),
+    "Rodilla_R": ("TH_R", "SH_R"),
+    "Rodilla_L": ("TH_L", "SH_L"),
+    "Tobillo_R": ("SH_R", "FT_R"),
+    "Tobillo_L": ("SH_L", "FT_L"),
+}
+
+def calcular_R_articulares(
+    R_por_segmento: Dict[str, np.ndarray],
+    pares: Dict[str, Tuple[str, str]] = PARES_ARTICULARES,
+) -> Dict[str, np.ndarray]:
+    """
+    A partir de las matrices de rotación (3, 3, n_frames) de cada
+    segmento (ya sea crudas o ya calibradas - ver más abajo), calcula la
+    matriz de rotación RELATIVA de cada articulación definida en
+    PARES_ARTICULARES:
+ 
+        R_articular(t) = R_proximal(t)⁻¹ · R_distal(t)
+ 
+    Esto da la orientación del segmento distal vista DESDE el sistema de
+    referencia del segmento proximal - la convención estándar de ángulo
+    articular (ej. rodilla = pierna respecto a muslo, no al revés).
+ 
+    Nota de álgebra (por qué es indistinto calibrar antes o después):
+    si R_prox y R_dist ya vienen calibradas contra su propia N-pose
+    (R_calibrado = R_estatico⁻¹ · R_dinamico para cada segmento por
+    separado), el resultado de R_proximal_calib⁻¹ · R_distal_calib es
+    MATEMÁTICAMENTE IDÉNTICO a calibrar el ángulo articular crudo
+    directamente (R_articular_estatico⁻¹ · R_articular_crudo). Se
+    verificó numéricamente (diff = 0). Por eso esta función puede
+    recibir tanto matrices crudas como ya calibradas, según qué
+    resultado se le pase.
+    """
+    R_articulares = {}
+    for nombre_art, (prox, dist) in pares.items():
+        R_prox = R_por_segmento[prox]          # (3, 3, n_frames)
+        R_dist = R_por_segmento[dist]          # (3, 3, n_frames)
+        R_prox_inv = R_prox.transpose(1, 0, 2)  # inversa de una rotación = transpuesta, por frame
+        R_articulares[nombre_art] = np.einsum("ijt,jkt->ikt", R_prox_inv, R_dist)
+    return R_articulares
+ 
+ 
+def _matrices_R_desde_markers(markers) -> Dict[str, np.ndarray]:
+    """Atajo: {nombre_segmento: R (3,3,n_frames)} crudo, para todos los SEGMENTS."""
+    return {
+        seg_name: construir_matriz_rotacion(markers, seg_def)
+        for seg_name, seg_def in SEGMENTS.items()
+    }
+ 
+ 
+def calcular_angulos_articulares(
+    markers_dinamico,
+    R_estatico: Dict[str, np.ndarray],
+    pares: Dict[str, Tuple[str, str]] = PARES_ARTICULARES,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Calcula los ángulos articulares CALIBRADOS contra la N-pose estática,
+    para cada par (proximal, distal) de PARES_ARTICULARES, a partir del
+    trial dinámico:
+ 
+        1. R_din[seg](t)      = matriz de rotación cruda de cada segmento
+                                 (construir_matriz_rotacion).
+        2. R_art_din[art](t)  = R_proximal(t)⁻¹ · R_distal(t)   (crudo)
+        3. R_art_est[art]     = R_proximal_est⁻¹ · R_distal_est (offset
+                                 geométrico puro, desde la N-pose)
+        4. R_art_calib(t)     = R_art_est⁻¹ · R_art_din(t)
+ 
+    El paso 4 es necesario: sin él, el ángulo articular "crudo" no parte
+    de 0° en la postura neutra, porque cada segmento tiene su propio
+    offset de construcción de ejes locales (siempre relacionado con cómo
+    se definieron axis_1/axis_2 en SEGMENTS) que NO se cancela solo por
+    restar segmento menos segmento. Se verificó numéricamente: el
+    ángulo articular crudo arranca en valores tipo [-15°, 3°, 20°] en
+    vez de [0°, 0°, 0°] en frame 0 si no se calibra.
+ 
+    Devuelve {nombre_articular: DataFrame con Tiempo(s), cuaterniones y
+    Euler ZXY}, mismo formato que calcular_orientaciones_calibradas.
+    """
+    time = markers_dinamico.time.values
+ 
+    # Paso 1-2: matrices crudas por segmento y por articulación (dinámico)
+    R_din_por_segmento = _matrices_R_desde_markers(markers_dinamico)
+    R_art_din = calcular_R_articulares(R_din_por_segmento, pares)
+ 
+    # Paso 3: offset articular puro desde el estático (R_estatico ya viene
+    # como UNA matriz (3,3) por segmento, promediada - ver
+    # calcular_R_estatico_por_segmento). Para reusar calcular_R_articulares
+    # (que espera (3,3,n_frames)) se le agrega un eje de tiempo de tamaño 1.
+    R_estatico_con_tiempo = {
+        seg_name: R[:, :, np.newaxis] for seg_name, R in R_estatico.items()
+    }
+    R_art_estatico_con_tiempo = calcular_R_articulares(R_estatico_con_tiempo, pares)
+    R_art_estatico = {
+        nombre_art: R[:, :, 0] for nombre_art, R in R_art_estatico_con_tiempo.items()
+    }
+ 
+    # Paso 4: calibrar cada ángulo articular contra su propio offset estático
+    resultados = {}
+    for nombre_art in pares:
+        R_din = R_art_din[nombre_art]                  # (3, 3, n_frames)
+        R_est = R_art_estatico[nombre_art]              # (3, 3)
+        R_est_inv = R_est.T
+ 
+        R_calibrado = np.einsum("ij,jkt->ikt", R_est_inv, R_din)
+ 
+        df_quat = matriz_a_cuaterniones(R_calibrado)
+        df_euler = matriz_a_euler_zxy(R_calibrado)
+        df = pd.concat([df_quat, df_euler], axis=1)
+        df.insert(0, "Tiempo(s)", time)
+        resultados[nombre_art] = df
+ 
+    return resultados
+
 # -------------- Funciones de exportación 
 
 def exportar_resultados_excel(resultados: Dict[str, pd.DataFrame], ruta_salida: str):
@@ -455,7 +642,7 @@ def main():
     os.chdir(carpeta_salida)  # read_c3d / interpolate_c3d guardan sus CSV en el cwd
     try:
         # --- 1. Evaluación de calidad del trial de MOVIMIENTO ---
-        markers, analogs = read_c3d(movement_c3d)
+        markers, analogs = read_c3d(static_c3d)
         os.replace("markers_c3d.csv", "markers_c3d_movimiento.csv")
         if os.path.exists("analogs_c3d.csv"):
             os.replace("analogs_c3d.csv", "analogs_c3d_movimiento.csv")
@@ -521,27 +708,37 @@ def main():
     # --- 7. Orientaciones CALIBRADAS contra la N-pose ---
     resultados_calibrados = calcular_orientaciones_calibradas(int_markers, R_estatico)
  
-    # --- 8. Guardado de resultados: tres Excel (crudo, calibrado, estático), ---
-    # cada uno con una hoja por segmento y cada variable en su propia columna,
-    # todos en la misma carpeta_salida junto con los CSV de marcadores y JSON
+    # --- 7b. Ángulos ARTICULARES (orientación relativa proximal->distal),
+    # calibrados contra la N-pose, para cadera/rodilla/tobillo izq y der ---
+    resultados_articulares = calcular_angulos_articulares(int_markers, R_estatico)
+ 
+    # --- 8. Guardado de resultados: cuatro Excel (crudo, calibrado,
+    # estático, articulares), cada uno con una hoja por segmento/articulación
+    # y cada variable en su propia columna, todos en la misma carpeta_salida
+    # junto con los CSV de marcadores y JSON
     ruta_excel_crudo = carpeta_salida / "qualisys_crudo.xlsx"
     ruta_excel_calibrado = carpeta_salida / "qualisys_calibrado.xlsx"
     ruta_excel_estatico = carpeta_salida / "qualisys_estatico.xlsx"
+    ruta_excel_articular = carpeta_salida / "qualisys_angulos_articulares.xlsx"
  
     exportar_resultados_excel(resultados_crudos, ruta_excel_crudo)
     exportar_resultados_excel(resultados_calibrados, ruta_excel_calibrado)
     exportar_resultados_excel(resultados_estatico, ruta_excel_estatico)
+    exportar_resultados_excel(resultados_articulares, ruta_excel_articular)
  
     print("\n=== Orientaciones por segmento (movimiento crudo, calibrado, y estático) ===")
     print(f"  Crudo     -> {ruta_excel_crudo.name}  (hojas: {', '.join(resultados_crudos.keys())})")
     print(f"  Calibrado -> {ruta_excel_calibrado.name}  (hojas: {', '.join(resultados_calibrados.keys())})")
     print(f"  Estático  -> {ruta_excel_estatico.name}  (hojas: {', '.join(resultados_estatico.keys())})")
+    print("\n=== Ángulos articulares (calibrados contra N-pose) ===")
+    print(f"  Articular -> {ruta_excel_articular.name}  (hojas: {', '.join(resultados_articulares.keys())})")
  
     return {
         "excel_data": excel_data,
         "resultados_crudos": resultados_crudos,
         "resultados_calibrados": resultados_calibrados,
         "resultados_estatico": resultados_estatico,
+        "resultados_articulares": resultados_articulares,
         "R_estatico": R_estatico,
     }
  
