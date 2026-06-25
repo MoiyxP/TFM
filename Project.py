@@ -9,11 +9,12 @@ from scipy.spatial.transform import Rotation
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
+import detectar_protocolo
  
 
 ruta_excel = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\prueba.xlsx"
-static_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Static trial 1.c3d"
-movement_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Running trial 3.c3d"
+static_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Tutorial modelos\Visual3D_Tutorial1_SampleC3DFiles\Sample_C3D_Files\Sub01_StandingStaticCal01.c3d"
+movement_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Tutorial modelos\Visual3D_Tutorial1_SampleC3DFiles\Sample_C3D_Files\Sub01_Walk001.c3d"
 CARPETA_SALIDA = "salida_test"
 
 # ----------------------------------
@@ -38,9 +39,9 @@ def read_c3d(ruta):
         print("No analogs in this file")
         analogs = None
  
-    if analogs:
+    if analogs is not None:
         df_analogs = analogs.meca.to_wide_dataframe()
-        df_analogs.to_csv("manalogs_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
+        df_analogs.to_csv("analogs_c3d.csv", sep=';', decimal=',', encoding='utf-8-sig')
  
     return markers, analogs
  
@@ -181,7 +182,6 @@ def interpolate_c3d(markers, analogs, method):
 
 # -------------- Funciones de análisis del c3d 
 
-
 class SegmentDef(NamedTuple):
     origin: Tuple[str, ...]
     axis_1: Tuple[str, str]
@@ -190,62 +190,13 @@ class SegmentDef(NamedTuple):
     axis_to_recalculate: str
  
  
-SEGMENTS: Dict[str, SegmentDef] = {
-    "PV": SegmentDef(
-        origin=("L_IAS", "R_IAS", "SACR"),
-        axis_1=("SACR", "L_IAS"),
-        axis_2=("L_IAS", "R_IAS"),
-        axes_name="xz",
-        axis_to_recalculate="x",
-    ),
-    "TH_R": SegmentDef(
-        origin=("R_FLE",),
-        axis_1=("R_PAS", "R_IAS"),
-        axis_2=("R_FLE", "R_IAS"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-    "TH_L": SegmentDef(
-        origin=("L_FLE",),
-        axis_1=("L_PAS", "L_IAS"),
-        axis_2=("L_FLE", "L_IAS"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-    "SH_R": SegmentDef(
-        origin=("R_FAL",),
-        axis_1=("R_FAL", "R_TTC"),
-        axis_2=("R_FAL", "R_FLE"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-    "SH_L": SegmentDef(
-        origin=("L_FAL",),
-        axis_1=("L_FAL", "L_TTC"),
-        axis_2=("L_FAL", "L_FLE"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-    "FT_R": SegmentDef(
-        origin=("R_FCC",),
-        axis_1=("R_FCC", "R_FAL"),
-        axis_2=("R_FCC", "R_FM2"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-    "FT_L": SegmentDef(
-        origin=("L_FCC",),
-        axis_1=("L_FCC", "L_FAL"),
-        axis_2=("L_FCC", "L_FM2"),
-        axes_name="xy",
-        axis_to_recalculate="x",
-    ),
-}
- 
-XSENS_NAME_MAP = {
-    "PV": "PV", "TH_R": "TH DER", "TH_L": "TH IZQ",
-    "SH_R": "SH DER", "SH_L": "SH IZQ", "FT_R": "FT DER", "FT_L": "FT IZQ",
-}
+# SEGMENTS y XSENS_NAME_MAP se asignan dinámicamente dentro de main(),
+# tras detectar el protocolo del c3d. Se inicializan en None acá para que
+# las funciones de este módulo (construir_matriz_rotacion, etc.) puedan
+# referenciarlas como globales; NO usar estos nombres antes de llamar a
+# main() o detectar_protocolo.detectar_y_cargar() explícitamente.
+SEGMENTS: Dict[str, SegmentDef] = None
+XSENS_NAME_MAP: Dict[str, str] = None
 
 def _vector_entre_marcadores(markers, desde, hasta):
     """Vector (3, n_frames) numpy puro entre dos marcadores, para todos los frames."""
@@ -506,8 +457,16 @@ def main():
         # --- 1. Evaluación de calidad del trial de MOVIMIENTO ---
         markers, analogs = read_c3d(movement_c3d)
         os.replace("markers_c3d.csv", "markers_c3d_movimiento.csv")
-        if os.path.exists("manalogs_c3d.csv"):
-            os.replace("manalogs_c3d.csv", "manalogs_c3d_movimiento.csv")
+        if os.path.exists("analogs_c3d.csv"):
+            os.replace("analogs_c3d.csv", "analogs_c3d_movimiento.csv")
+ 
+        # Detección automática del protocolo de marcadores (ver
+        # detectar_protocolo.py): actualiza las globales SEGMENTS y
+        # XSENS_NAME_MAP de este módulo para que el resto del pipeline
+        # (construir_matriz_rotacion, calibración, etc.) las use sin
+        # necesidad de saber qué protocolo es.
+        global SEGMENTS, XSENS_NAME_MAP
+        SEGMENTS, XSENS_NAME_MAP = detectar_protocolo.detectar_y_cargar(markers.channel.values)
  
         report = gap_report(markers)
         with open("results.json", "w") as f:  # lo visualizamos en un json
@@ -516,7 +475,7 @@ def main():
         # --- 2. Interpolación del trial de MOVIMIENTO con 'akima' ---
         # int_markers (interpolado, SIN gaps) es lo que se usa más abajo para
         # calcular las orientaciones - no markers (el crudo, con gaps).
-        int_markers, int_analogs = interpolate_c3d(markers, analogs, "akima")
+        int_markers, int_analogs = interpolate_c3d(markers, analogs, 'akima')
         os.replace("int_markers_c3d.csv", "int_markers_c3d_movimiento.csv")
         if os.path.exists("int_analogs_c3d.csv"):
             os.replace("int_analogs_c3d.csv", "int_analogs_c3d_movimiento.csv")
@@ -530,14 +489,14 @@ def main():
         # que si no se renombran de inmediato, el estático los pisaría.
         markers_static, analogs_static = read_c3d(static_c3d)
         os.replace("markers_c3d.csv", "markers_c3d_static.csv")
-        if os.path.exists("manalogs_c3d.csv"):
-            os.replace("manalogs_c3d.csv", "manalogs_c3d_static.csv")
+        if os.path.exists("analogs_c3d.csv"):
+            os.replace("analogs_c3d.csv", "analogs_c3d_static.csv")
  
         report_static = gap_report(markers_static)
         with open("results_static.json", "w") as f:
             json.dump(report_static, f, indent=4)
  
-        int_markers_static, _ = interpolate_c3d(markers_static, analogs_static, "akima")
+        int_markers_static, _ = interpolate_c3d(markers_static, analogs_static, 'akima')
         os.replace("int_markers_c3d.csv", "int_markers_c3d_static.csv")
         if os.path.exists("int_analogs_c3d.csv"):
             os.replace("int_analogs_c3d.csv", "int_analogs_c3d_static.csv")
