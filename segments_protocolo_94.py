@@ -64,8 +64,21 @@ SEGMENTS: Dict[str, SegmentDef] = {
     ),
     "TH_L": SegmentDef(
         origin=("LFLE",),
-        axis_1=("LIPS", "LIAS"),
-        axis_2=("LFLE", "LIAS"),
+        # axis_1/axis_2 con el orden de marcadores INVERTIDO respecto a TH_R
+        # (LIAS,LIPS en vez de LIPS,LIAS / LIAS,LFLE en vez de LFLE,LIAS):
+        # esto invierte el signo de ambos vectores de entrada. Es necesario
+        # porque la misma fórmula aplicada a marcadores en espejo (L en vez
+        # de R) NO da un eje local que sea el espejo anatómico correcto -
+        # da uno con Euler_X/Euler_Y invertidos de signo respecto al lado
+        # derecho para el MISMO movimiento físico (verificado numéricamente
+        # con una flexión de cadera simulada idéntica en ambas piernas:
+        # sin este cambio, TH_R daba Euler=[19.62, 3.85, -1.47] y TH_L daba
+        # [19.62, -3.85, 1.47] - mismo Euler_Z, X/Y con signo opuesto). Con
+        # el orden invertido, TH_L da [19.62, 3.85, -1.47], igual que TH_R.
+        # Euler_Z (flexo-extensión, el eje dominante en marcha) no cambia
+        # con este ajuste - solo se corrige el signo de abducción/rotación.
+        axis_1=("LIAS", "LIPS"),
+        axis_2=("LIAS", "LFLE"),
         axes_name="xy",
         axis_to_recalculate="x",
     ),
@@ -79,8 +92,14 @@ SEGMENTS: Dict[str, SegmentDef] = {
     ),
     "SH_L": SegmentDef(
         origin=("LFAL",),
-        axis_1=("LFAL", "LTTC"),
-        axis_2=("LFAL", "LFLE"),
+        # Mismo ajuste de signo que en TH_L (ver comentario allí): orden de
+        # marcadores invertido respecto a SH_R para que Euler_X/Euler_Y de
+        # la rodilla izquierda salgan con el mismo signo que la derecha
+        # ante el mismo movimiento físico (verificado: sin esto, SH_R daba
+        # [24.94, -1.71, 0.98] y SH_L daba [24.94, 1.71, -0.98] para una
+        # flexión de rodilla idéntica en ambas piernas).
+        axis_1=("LTTC", "LFAL"),
+        axis_2=("LFLE", "LFAL"),
         axes_name="xy",
         axis_to_recalculate="x",
     ),
@@ -94,18 +113,24 @@ SEGMENTS: Dict[str, SegmentDef] = {
     ),
     "FT_L": SegmentDef(
         origin=("LFCC",),
-        axis_1=("LFCC", "LFAL"),
-        axis_2=("LFCC", "LTOE"),
+        # Mismo ajuste de signo que en TH_L/SH_L (ver comentarios arriba):
+        # orden de marcadores invertido respecto a FT_R, por consistencia
+        # con el resto de segmentos del lado izquierdo (no se detectó
+        # diferencia con un movimiento de flexión plantar/dorsal puro en
+        # la verificación, pero el mismo razonamiento geométrico de espejo
+        # aplica para cualquier componente de abducción/rotación del pie).
+        axis_1=("LFAL", "LFCC"),
+        axis_2=("LTOE", "LFCC"),
         axes_name="xy",
         axis_to_recalculate="x",
     ),
 }
-
+ 
 XSENS_NAME_MAP = {
     "PV": "PV", "TH_R": "TH DER", "TH_L": "TH IZQ",
     "SH_R": "SH DER", "SH_L": "SH IZQ", "FT_R": "FT DER", "FT_L": "FT IZQ",
 }
-
+ 
 # Lista de todos los marcadores que esta definición necesita - usada para
 # verificar al arrancar que el c3d los tiene todos (ver verificar_marcadores
 # en main.py).

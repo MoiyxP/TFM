@@ -23,7 +23,6 @@ CARPETA_SALIDA = "salida_test"
 
 # -------------- Funciones de lectura y calidad
 
-
 def read_c3d(ruta):
     """
     Lee un archivo .c3d y extrae los marcadores y, si existen, las señales
@@ -234,13 +233,7 @@ class SegmentDef(NamedTuple):
     axis_2: Tuple[str, str]
     axes_name: str
     axis_to_recalculate: str
- 
- 
-# SEGMENTS y XSENS_NAME_MAP se asignan dinámicamente dentro de main(),
-# tras detectar el protocolo del c3d. Se inicializan en None acá para que
-# las funciones de este módulo (construir_matriz_rotacion, etc.) puedan
-# referenciarlas como globales; NO usar estos nombres antes de llamar a
-# main() o detectar_protocolo.detectar_y_cargar() explícitamente.
+
 SEGMENTS: Dict[str, SegmentDef] = None
 XSENS_NAME_MAP: Dict[str, str] = None
 
@@ -444,31 +437,7 @@ def calcular_orientaciones_calibradas(
         resultados[seg_name] = df
     return resultados
 
-# -------------- Funciones de ángulos articulares
-#
-# Un "ángulo articular" es la orientación RELATIVA entre dos segmentos
-# contiguos (ej. rodilla = pierna respecto a muslo), a diferencia de las
-# orientaciones de más arriba, que son ABSOLUTAS (cada segmento respecto
-# al laboratorio).
-#
-# Se intentó usar pyomeca para esto (Rototrans.from_markers +
-# Angles.from_rototrans), pero:
-#   - Rototrans.from_markers sigue con el mismo bug que el resto del
-#     pipeline (mezcla xarray.DataArray con indexado posicional numpy al
-#     construir la matriz, y revienta con
-#     "new dimensions ('row','time') must be a superset of existing
-#     dimensions ('axis','time')" - independiente de la versión de numpy
-#     o xarray instalada, lo probé con varias).
-#   - La composición de dos Rototrans con el operador @ tampoco sirve:
-#     xarray intenta alinear por NOMBRE de dimensión en vez de hacer un
-#     matmul por frame, y el resultado colapsa a un escalar sin sentido
-#     (shape () en vez de (3,3,n_frames)).
-#   - Angles.from_rototrans SÍ funciona bien una vez se le pasa un
-#     Rototrans construido en numpy puro, y da resultados IDÉNTICOS
-#     (diff ~1e-14) a matriz_a_euler_zxy. Pero como ya tenemos esa
-#     función, no aporta nada usarla aparte.
-# Por eso esto sigue el mismo patrón numpy puro + scipy que el resto del
-# script, igual que construir_matriz_rotacion/calcular_orientaciones_*.
+# -------------- Extracción de ángulos articulares
  
 PARES_ARTICULARES: Dict[str, Tuple[str, str]] = {
     "Cadera_R": ("PV", "TH_R"),
@@ -642,7 +611,7 @@ def main():
     os.chdir(carpeta_salida)  # read_c3d / interpolate_c3d guardan sus CSV en el cwd
     try:
         # --- 1. Evaluación de calidad del trial de MOVIMIENTO ---
-        markers, analogs = read_c3d(static_c3d)
+        markers, analogs = read_c3d(movement_c3d)
         os.replace("markers_c3d.csv", "markers_c3d_movimiento.csv")
         if os.path.exists("analogs_c3d.csv"):
             os.replace("analogs_c3d.csv", "analogs_c3d_movimiento.csv")
