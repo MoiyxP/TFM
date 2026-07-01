@@ -14,7 +14,7 @@ import detectar_protocolo
 
 ruta_excel = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\prueba.xlsx"
 static_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Tutorial modelos\Visual3D_Tutorial1_SampleC3DFiles\Sample_C3D_Files\Sub01_StandingStaticCal01.c3d"
-movement_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Tutorial modelos\Visual3D_Tutorial1_SampleC3DFiles\Sample_C3D_Files\Sub01_Walk001.c3d"
+movement_c3d = r"C:\Users\DanielIordanov\Desktop\VictorMV-biomech\TFM\Code\TFM\Archivos\Tutorial modelos\Visual3D_Tutorial1_SampleC3DFiles\Sample_C3D_Files\Sub01_Walk003.c3d"
 CARPETA_SALIDA = "salida_test"
 
 # ----------------------------------
@@ -551,7 +551,77 @@ def calcular_angulos_articulares(
         df = pd.concat([df_quat, df_euler], axis=1)
         df.insert(0, "Tiempo(s)", time)
         resultados[nombre_art] = df
- 
+
+    # Paso 5: correccion de convencion de signo para el lado izquierdo.
+    #
+    # Euler_X: se corrige en las 3 articulaciones (Cadera, Rodilla,
+    # Tobillo). Evidencia robusta por promedio simple, sin ambiguedad:
+    # sale con signo OPUESTO entre lados de forma consistente en las 3.
+    #
+    # Euler_Y: se corrige SOLO en Cadera y Tobillo, NO en Rodilla. La
+    # evidencia del ESTATICO crudo (sujeto quieto, sin ruido) mostro el
+    # mismo patron de espejo en las 3 articulaciones (magnitud similar,
+    # signo opuesto: Cadera R=-26.2/L=+25.4, Rodilla R=+61.6/L=-71.0,
+    # Tobillo R=-66.3/L=+63.1) - pero al aplicar la correccion y comparar
+    # el resultado CALIBRADO final (con datos de Sub01_Walk001), el
+    # efecto fue distinto segun la articulacion:
+    #   Cadera:  diferencia de linea base R-L bajo de 8.1° a 1.7°  -> MEJORA
+    #   Rodilla: diferencia de linea base R-L subio de 1.1° a 8.7° -> EMPEORA
+    #   Tobillo: diferencia de linea base R-L bajo de 14.5° a 1.9° -> MEJORA
+    # Es decir, el espejo esta presente en la construccion geometrica
+    # cruda de los 3 casos, pero en Rodilla el proceso de calibracion
+    # (que involucra DOS segmentos con el mismo tipo de espejo - TH_L y
+    # SH_L - a diferencia de Cadera, donde PV no tiene lateralidad) ya
+    # cancela gran parte del efecto por si solo; corregir de nuevo ahi
+    # sobre-corrige y empeora la coincidencia. Por eso la decision se
+    # basa en el resultado FINAL medido (mejora o empeora), no solo en
+    # la evidencia cruda del estatico.
+    #
+    # Se corrige negando el ESCALAR ya calculado (no la matriz de
+    # rotacion): negar columnas de la matriz se probo antes en la sesion
+    # y rompia el acople de Euler_Z entre lados (agrega una rotacion
+    # extra de 180 grados) - negar el escalar final no tiene ese efecto,
+    # se verifico que Euler_Z queda identico tras esta correccion.
+    for nombre_art, df in resultados.items():
+        if nombre_art.endswith("_L"):
+            df["Euler_X"] = -df["Euler_X"]
+            if nombre_art.startswith("Cadera") or nombre_art.startswith("Tobillo"):
+                df["Euler_Y"] = -df["Euler_Y"]
+
+    # Paso 6: correccion de convencion de signo para Euler_Z
+    # (flexo-extension) de RODILLA, aplicada a AMBOS lados por igual (no
+    # solo _L como en el Paso 5 - esto NO es un problema de simetria
+    # espejo R/L, es que la convencion global de signo no coincide con
+    # el estandar clinico en NINGUN lado).
+    #
+    # Evidencia (excel real, Sub01_Walk001, hoja Rodilla_R/L): la
+    # excursion angular es fuertemente asimetrica hacia el negativo
+    # (R: -33° hacia abajo vs +24° hacia arriba; L: -35° vs +21°),
+    # consistente en ambas piernas. Fisiologicamente, durante la marcha
+    # la FLEXION de rodilla (balanceo) es el movimiento grande (~50-70°)
+    # y la EXTENSION completa (apoyo) se mantiene cerca de 0° - la
+    # convencion clinica estandar (Kadaba et al. 1990 y la mayoria de
+    # la literatura de marcha) reporta flexion como POSITIVO. Nuestra
+    # convencion tiene el movimiento grande (flexion real) en NEGATIVO,
+    # osea invertida respecto al estandar.
+    #
+    # Cadera y Tobillo NO se corrigen aca: su excursion no muestra la
+    # misma asimetria fuerte (Cadera: -18°/+16° aprox., razonablemente
+    # equilibrado; Tobillo: -19°/+11°, sesgo moderado pero no
+    # concluyente) - no hay evidencia suficiente para asumir que tienen
+    # el mismo problema de signo que Rodilla. Si se junta evidencia mas
+    # solida (ej. comparando rangos exactos contra Kadaba et al. 1990),
+    # se puede reconsiderar.
+    #
+    # Como es una correccion UNIFORME (mismo signo en R y L), no tiene
+    # el riesgo de las correcciones del Paso 5 (que podian mejorar un
+    # lado y empeorar la relacion entre lados) - es matematicamente
+    # equivalente a re-nombrar cual direccion fisica llamamos "positivo",
+    # sin tocar la relacion entre R y L.
+    for nombre_art, df in resultados.items():
+        if nombre_art.startswith("Rodilla"):
+            df["Euler_Z"] = -df["Euler_Z"]
+
     return resultados
 
 # -------------- Funciones de exportación 

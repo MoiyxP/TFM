@@ -34,17 +34,18 @@ de construcción de eje distinta (a partir de un cluster rígido, no de
 2 vectores anatómicos) que no está implementada aquí.
 """
 
+
 from typing import Dict, NamedTuple, Tuple
-
-
+ 
+ 
 class SegmentDef(NamedTuple):
     origin: Tuple[str, ...]
     axis_1: Tuple[str, str]
     axis_2: Tuple[str, str]
     axes_name: str
     axis_to_recalculate: str
-
-
+ 
+ 
 SEGMENTS: Dict[str, SegmentDef] = {
     # PELVIS
     "PV": SegmentDef(
@@ -64,21 +65,10 @@ SEGMENTS: Dict[str, SegmentDef] = {
     ),
     "TH_L": SegmentDef(
         origin=("LFLE",),
-        # axis_1/axis_2 con el orden de marcadores INVERTIDO respecto a TH_R
-        # (LIAS,LIPS en vez de LIPS,LIAS / LIAS,LFLE en vez de LFLE,LIAS):
-        # esto invierte el signo de ambos vectores de entrada. Es necesario
-        # porque la misma fórmula aplicada a marcadores en espejo (L en vez
-        # de R) NO da un eje local que sea el espejo anatómico correcto -
-        # da uno con Euler_X/Euler_Y invertidos de signo respecto al lado
-        # derecho para el MISMO movimiento físico (verificado numéricamente
-        # con una flexión de cadera simulada idéntica en ambas piernas:
-        # sin este cambio, TH_R daba Euler=[19.62, 3.85, -1.47] y TH_L daba
-        # [19.62, -3.85, 1.47] - mismo Euler_Z, X/Y con signo opuesto). Con
-        # el orden invertido, TH_L da [19.62, 3.85, -1.47], igual que TH_R.
-        # Euler_Z (flexo-extensión, el eje dominante en marcha) no cambia
-        # con este ajuste - solo se corrige el signo de abducción/rotación.
-        axis_1=("LIAS", "LIPS"),
-        axis_2=("LIAS", "LFLE"),
+        # Fórmula SIMÉTRICA respecto a TH_R (mismo orden de marcadores
+        # homólogos: IPS->IAS, FLE->IAS). Ver nota de módulo arriba.
+        axis_1=("LIPS", "LIAS"),
+        axis_2=("LFLE", "LIAS"),
         axes_name="xy",
         axis_to_recalculate="x",
     ),
@@ -92,37 +82,52 @@ SEGMENTS: Dict[str, SegmentDef] = {
     ),
     "SH_L": SegmentDef(
         origin=("LFAL",),
-        # Mismo ajuste de signo que en TH_L (ver comentario allí): orden de
-        # marcadores invertido respecto a SH_R para que Euler_X/Euler_Y de
-        # la rodilla izquierda salgan con el mismo signo que la derecha
-        # ante el mismo movimiento físico (verificado: sin esto, SH_R daba
-        # [24.94, -1.71, 0.98] y SH_L daba [24.94, 1.71, -0.98] para una
-        # flexión de rodilla idéntica en ambas piernas).
-        axis_1=("LTTC", "LFAL"),
-        axis_2=("LFLE", "LFAL"),
+        # Fórmula SIMÉTRICA respecto a SH_R. Ver nota de módulo arriba.
+        axis_1=("LFAL", "LTTC"),
+        axis_2=("LFAL", "LFLE"),
         axes_name="xy",
         axis_to_recalculate="x",
     ),
     # PIE (Foot)
+    # NOTA DE CONVENCIÓN: a diferencia de PV/TH/SH (donde el eje longitudinal
+    # del hueso coincide con la vertical, porque esos huesos son verticales
+    # de pie), el pie es HORIZONTAL (va del talón hacia los dedos). Por eso
+    # aquí se reasignan los ejes explícitamente para mantener la misma
+    # convención anatómica que el resto de segmentos: X=anterior,
+    # Y=vertical, Z=lateral - en vez de dejar que "a lo largo del pie"
+    # (que sería horizontal) caiga en el eje Y por defecto.
+    #   axis_1 = FCC->TOE (talón->dedos): medido directo, se asigna a X
+    #            (anterior) y se CONSERVA tal cual (no se recalcula).
+    #   axis_2 = FCC->FAL (talón->maléolo): vector diagonal (ni puramente
+    #            vertical ni puramente lateral, es la única referencia
+    #            disponible con 3 marcadores), se asigna a Z (provisional)
+    #            y se DESCARTA/recalcula - lo que queda como Y (vertical)
+    #            es el producto cruzado, más confiable que cualquier
+    #            vector medido directo para esta dirección.
+    # LIMITACIÓN HONESTA: con solo 3 marcadores, el pie no tiene ningún
+    # vector medido puramente lateral. El eje Z (azul) resultante queda
+    # con una mezcla real de componente lateral y vertical (verificado:
+    # ~50/50 en la N-pose) - no es un error, es el límite geométrico de
+    # esta definición con estos marcadores.
     "FT_R": SegmentDef(
         origin=("RFCC",),
-        axis_1=("RFCC", "RFAL"),
-        axis_2=("RFCC", "RTOE"),
-        axes_name="xy",
-        axis_to_recalculate="x",
+        axis_1=("RFCC", "RTOE"),
+        axis_2=("RFCC", "RFAL"),
+        axes_name="xz",
+        axis_to_recalculate="z",
     ),
     "FT_L": SegmentDef(
+        # axis_2 con orden INVERTIDO (LFAL->LFCC, no LFCC->LFAL) respecto a
+        # FT_R: necesario para que el eje Y (vertical) salga con el mismo
+        # signo en ambos lados - verificado con el estático (Z_lab positivo
+        # en ambos) y con la marcha real (Euler_Z de tobillo, la flexión,
+        # coincide bien entre lados: -33.05° vs -33.87° de media). El eje X
+        # (anterior) permanece intacto, sin este ajuste.
         origin=("LFCC",),
-        # Mismo ajuste de signo que en TH_L/SH_L (ver comentarios arriba):
-        # orden de marcadores invertido respecto a FT_R, por consistencia
-        # con el resto de segmentos del lado izquierdo (no se detectó
-        # diferencia con un movimiento de flexión plantar/dorsal puro en
-        # la verificación, pero el mismo razonamiento geométrico de espejo
-        # aplica para cualquier componente de abducción/rotación del pie).
-        axis_1=("LFAL", "LFCC"),
-        axis_2=("LTOE", "LFCC"),
-        axes_name="xy",
-        axis_to_recalculate="x",
+        axis_1=("LFCC", "LTOE"),
+        axis_2=("LFAL", "LFCC"),
+        axes_name="xz",
+        axis_to_recalculate="z",
     ),
 }
  
